@@ -52,7 +52,7 @@ static uint g_keyModMaskXOnOrOff = 0;
 
 static void calculateGrabMasks()
 {
-	g_keyModMaskXAccel = KKeyServer::accelModMaskX();
+	g_keyModMaskXAccel = KKeyServer::accelModMaskX() | XCB_MOD_MASK_5;
 	g_keyModMaskXOnOrOff =
 			KKeyServer::modXLock() |
 			KKeyServer::modXNumLock() |
@@ -143,6 +143,14 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
             keyModX |= KKeyServer::modXShift();
         }
 
+        // Check if meta needs to be added
+        if (!(keyQt & Qt::META) &&
+            keySymX & Qt::MetaModifier)
+        {
+			qCDebug(KGLOBALACCELD) << "adding meta to the grab";
+			keyModX |= XCB_MOD_MASK_5;
+        }
+
         keyModX &= g_keyModMaskXAccel; // Get rid of any non-relevant bits in mod
 
         if( !keyCodeX ) {
@@ -159,7 +167,7 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         QString sDebug = QString("\tcode: 0x%1 state: 0x%2 | ").arg(keyCodeX,0,16).arg(keyModX,0,16);
     #endif
         uint keyModMaskX = ~g_keyModMaskXOnOrOff;
-            QVector<xcb_void_cookie_t> cookies;
+        QVector<xcb_void_cookie_t> cookies;
         for( uint irrelevantBitsMask = 0; irrelevantBitsMask <= 0xff; irrelevantBitsMask++ ) {
             if( (irrelevantBitsMask & keyModMaskX) == 0 ) {
     #ifndef NDEBUG
@@ -283,8 +291,8 @@ bool KGlobalAccelImpl::x11KeyPress(xcb_key_press_event_t *pEvent)
     xcb_request_check(c, cookie);
 
     int keyQt;
-    if (!KKeyServer::xcbKeyPressEventToQt(pEvent, &keyQt)) {
-        qCWarning(KGLOBALACCELD) << "KKeyServer::xcbKeyPressEventToQt failed";
+    if (!x11KeyKeyPressEventToQt(pEvent, &keyQt)) {
+       qCWarning(KGLOBALACCELD) << "x11KeyKeyPressEventToQt failed";
         return false;
     }
     //qDebug() << "keyQt=" << QString::number(keyQt, 16);
@@ -294,6 +302,45 @@ bool KGlobalAccelImpl::x11KeyPress(xcb_key_press_event_t *pEvent)
         QX11Info::setAppTime(pEvent->time);
     }
 	return keyPressed(keyQt);
+}
+
+bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *keyQt) {
+	const uint16_t keyModX = e->state & (KKeyServer::accelModMaskX() | XCB_MOD_MASK_5 | KKeyServer::MODE_SWITCH);
+
+	xcb_key_symbols_t *symbols = xcb_key_symbols_alloc(QX11Info::connection());
+
+	// We might have to use 4,5 instead of 0,1 here when mode_switch is active, just not sure how to test that.
+	const xcb_keysym_t keySym0 = xcb_key_press_lookup_keysym(symbols, e, 0);
+	const xcb_keysym_t keySym1 = xcb_key_press_lookup_keysym(symbols, e, 1);
+	const xcb_keysym_t keySym4 = xcb_key_press_lookup_keysym(symbols, e, 4);
+	xcb_keysym_t keySymX;
+
+	if ((e->state & KKeyServer::modXNumLock()) && (keySym1 >= XK_KP_Space && keySym1 <= XK_KP_9)) {
+		if ((e->state & XCB_MOD_MASK_SHIFT))
+			keySymX = keySym0;
+		else
+			keySymX = keySym1;
+	} else {
+		if ((e->state & XCB_MOD_MASK_5)) {
+			keySymX = keySym4;
+		} else {
+			keySymX = keySym0;
+		}
+	}
+
+	bool ok = KKeyServer::symXModXToKeyQt(keySymX, keyModX, keyQt);
+
+	if ((*keyQt & Qt::ShiftModifier) && !KKeyServer::isShiftAsModifierAllowed(*keyQt)) {
+		if (*keyQt != Qt::Key_Tab) { // KKeySequenceWidget does not map shift+tab to backtab
+			static const int FirstLevelShift = 1;
+			keySymX = xcb_key_symbols_get_keysym(symbols, e->detail, FirstLevelShift);
+			KKeyServer::symXModXToKeyQt(keySymX, keyModX, keyQt);
+		}
+		*keyQt &= ~Qt::ShiftModifier;
+	}
+
+	xcb_key_symbols_free(symbols);
+	return ok;
 }
 
 void KGlobalAccelImpl::setEnabled( bool enable )

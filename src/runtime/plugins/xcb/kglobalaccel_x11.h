@@ -74,8 +74,9 @@ private:
 	 * This is public for compatibility only. You do not need to call it.
 	 */
 	void x11MappingNotify();
-        bool x11KeyPress(xcb_key_press_event_t *event);
-	
+	bool x11KeyPress(xcb_key_press_event_t *event);
+	bool x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *keyQt);
+
     xcb_key_symbols_t *m_keySymbols;
     uint8_t m_xkb_first_event;
 };
