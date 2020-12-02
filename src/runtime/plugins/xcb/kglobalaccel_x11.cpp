@@ -134,10 +134,14 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         // Check if shift needs to be added to the grab since KKeySequenceWidget
         // can remove shift for some keys. (all the %&* and such)
         if( !(keyQt & Qt::SHIFT) &&
-            !KKeyServer::isShiftAsModifierAllowed( keyQt ) &&
             !(keyQt & Qt::KeypadModifier) &&
+            ((!KKeyServer::isShiftAsModifierAllowed( keyQt ) &&
             keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 0) &&
-            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 1) )
+            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 1)) ||
+            (!(keyQt & Qt::META) &&
+            keySymX & Qt::MetaModifier &&
+            keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 4) &&
+            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 5))))
         {
             qCDebug(KGLOBALACCELD) << "adding shift to the grab";
             keyModX |= KKeyServer::modXShift();
@@ -211,7 +215,7 @@ bool KGlobalAccelImpl::nativeEventFilter(const QByteArray &eventType, void *mess
     if (eventType != "xcb_generic_event_t") {
         return false;
     }
-    xcb_generic_event_t *event = reinterpret_cast<xcb_generic_event_t*>(message);
+    auto *event = reinterpret_cast<xcb_generic_event_t*>(message);
     const uint8_t responseType = event->response_type & ~0x80;
     if (responseType == XCB_MAPPING_NOTIFY) {
         x11MappingNotify();
@@ -315,6 +319,7 @@ bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *ke
 	const xcb_keysym_t keySym4 = xcb_key_press_lookup_keysym(symbols, e, 4);
 	const xcb_keysym_t keySym5 = xcb_key_press_lookup_keysym(symbols, e, 5);
 	xcb_keysym_t keySymX;
+	bool metaShift = false;
 
 	if ((e->state & KKeyServer::modXNumLock()) && (keySym1 >= XK_KP_Space && keySym1 <= XK_KP_9)) {
 		if ((e->state & XCB_MOD_MASK_SHIFT))
@@ -325,6 +330,7 @@ bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *ke
 		if ((e->state & XCB_MOD_MASK_5)) {
 			if ((e->state & XCB_MOD_MASK_SHIFT)) {
 				keySymX = keySym5;
+				metaShift = true;
 			} else {
 				keySymX = keySym4;
 			}
@@ -335,8 +341,8 @@ bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *ke
 
 	bool ok = KKeyServer::symXModXToKeyQt(keySymX, keyModX, keyQt);
 
-	if ((*keyQt & Qt::ShiftModifier) && !KKeyServer::isShiftAsModifierAllowed(*keyQt)) {
-		if (*keyQt != Qt::Key_Tab) { // KKeySequenceWidget does not map shift+tab to backtab
+	if ((*keyQt & Qt::ShiftModifier) && (!KKeyServer::isShiftAsModifierAllowed(*keyQt) || metaShift)) {
+		if (*keyQt != Qt::Key_Tab && !metaShift) { // KKeySequenceWidget does not map shift+tab to backtab
 			static const int FirstLevelShift = 1;
 			keySymX = xcb_key_symbols_get_keysym(symbols, e->detail, FirstLevelShift);
 			KKeyServer::symXModXToKeyQt(keySymX, keyModX, keyQt);
