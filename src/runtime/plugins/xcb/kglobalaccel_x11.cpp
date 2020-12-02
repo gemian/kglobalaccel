@@ -292,7 +292,7 @@ bool KGlobalAccelImpl::x11KeyPress(xcb_key_press_event_t *pEvent)
 
     int keyQt;
     if (!x11KeyKeyPressEventToQt(pEvent, &keyQt)) {
-       qCWarning(KGLOBALACCELD) << "x11KeyKeyPressEventToQt failed";
+        qCWarning(KGLOBALACCELD) << "x11KeyKeyPressEventToQt failed";
         return false;
     }
     //qDebug() << "keyQt=" << QString::number(keyQt, 16);
@@ -313,6 +313,7 @@ bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *ke
 	const xcb_keysym_t keySym0 = xcb_key_press_lookup_keysym(symbols, e, 0);
 	const xcb_keysym_t keySym1 = xcb_key_press_lookup_keysym(symbols, e, 1);
 	const xcb_keysym_t keySym4 = xcb_key_press_lookup_keysym(symbols, e, 4);
+	const xcb_keysym_t keySym5 = xcb_key_press_lookup_keysym(symbols, e, 5);
 	xcb_keysym_t keySymX;
 
 	if ((e->state & KKeyServer::modXNumLock()) && (keySym1 >= XK_KP_Space && keySym1 <= XK_KP_9)) {
@@ -322,7 +323,11 @@ bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *ke
 			keySymX = keySym1;
 	} else {
 		if ((e->state & XCB_MOD_MASK_5)) {
-			keySymX = keySym4;
+			if ((e->state & XCB_MOD_MASK_SHIFT)) {
+				keySymX = keySym5;
+			} else {
+				keySymX = keySym4;
+			}
 		} else {
 			keySymX = keySym0;
 		}
