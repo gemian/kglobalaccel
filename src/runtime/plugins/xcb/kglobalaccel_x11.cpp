@@ -139,7 +139,7 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
             keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 0) &&
             keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 1)) ||
             (!(keyQt & Qt::META) &&
-            keySymX & Qt::MetaModifier &&
+            keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 0) &&
             keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 4) &&
             keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 5))))
         {
@@ -149,7 +149,8 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
 
         // Check if meta needs to be added
         if (!(keyQt & Qt::META) &&
-            keySymX & Qt::MetaModifier)
+            keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 0) &&
+            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 4))
         {
 			qCDebug(KGLOBALACCELD) << "adding meta to the grab";
 			keyModX |= XCB_MOD_MASK_5;
@@ -168,7 +169,7 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         //  the irrelevant bits are always ignored and we can just make one XGrabKey
         //  call per accelerator? -- ellis
     #ifndef NDEBUG
-        QString sDebug = QString("\tcode: 0x%1 state: 0x%2 | ").arg(keyCodeX,0,16).arg(keyModX,0,16);
+        QString sDebug = QString("code: 0x%1 state: 0x%2 | ").arg(keyCodeX,0,16).arg(keyModX,0,16);
     #endif
         uint keyModMaskX = ~g_keyModMaskXOnOrOff;
         QVector<xcb_void_cookie_t> cookies;
