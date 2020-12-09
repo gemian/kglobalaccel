@@ -41,6 +41,8 @@
 #include <xcb/xkb.h>
 #undef explicit
 
+#define NDEBUG
+
 // g_keyModMaskXAccel
 //	mask of modifiers which can be used in shortcuts
 //	(meta, alt, ctrl, shift)
@@ -102,25 +104,25 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         }
     }
 
-	if( !keyQt ) {
+    if( !keyQt ) {
         qCDebug(KGLOBALACCELD) << "Tried to grab key with null code.";
-		return false;
-	}
+        return false;
+    }
 
-	uint keyModX;
-	xcb_keysym_t keySymX;
+    uint keyModX;
+    xcb_keysym_t keySymX;
 
-	// Resolve the modifier
-	if( !KKeyServer::keyQtToModX(keyQt, &keyModX) ) {
-		qCDebug(KGLOBALACCELD) << "keyQt (0x" << hex << keyQt << ") failed to resolve to x11 modifier";
-		return false;
-	}
+    // Resolve the modifier
+    if( !KKeyServer::keyQtToModX(keyQt, &keyModX) ) {
+        qCDebug(KGLOBALACCELD) << "keyQt (0x" << hex << keyQt << ") failed to resolve to x11 modifier";
+        return false;
+    }
 
-	// Resolve the X symbol
-	if( !KKeyServer::keyQtToSymX(keyQt, (int *)&keySymX) ) {
-		qCDebug(KGLOBALACCELD) << "keyQt (0x" << hex << keyQt << ") failed to resolve to x11 keycode";
-		return false;
-	}
+    // Resolve the X symbol
+    if( !KKeyServer::keyQtToSymX(keyQt, (int *)&keySymX) ) {
+        qCDebug(KGLOBALACCELD) << "keyQt (0x" << hex << keyQt << ") failed to resolve to x11 keycode";
+        return false;
+    }
 
     xcb_keycode_t *keyCodes = xcb_key_symbols_get_keycode(m_keySymbols, keySymX);
     if (!keyCodes) {
@@ -141,7 +143,8 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
             (!(keyQt & Qt::META) &&
             keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 0) &&
             keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 4) &&
-            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 5))))
+            (keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 1) ||
+            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 5) ) ) ) )
         {
             qCDebug(KGLOBALACCELD) << "adding shift to the grab";
             keyModX |= KKeyServer::modXShift();
@@ -150,10 +153,12 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         // Check if meta needs to be added
         if (!(keyQt & Qt::META) &&
             keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 0) &&
-            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 4))
+            keySymX != xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 1) &&
+            (keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 4) ||
+            keySymX == xcb_key_symbols_get_keysym(m_keySymbols, keyCodeX, 5) ) )
         {
-			qCDebug(KGLOBALACCELD) << "adding meta to the grab";
-			keyModX |= XCB_MOD_MASK_5;
+            qCDebug(KGLOBALACCELD) << "adding meta to the grab";
+            keyModX |= XCB_MOD_MASK_5;
         }
 
         keyModX &= g_keyModMaskXAccel; // Get rid of any non-relevant bits in mod
@@ -168,16 +173,16 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         // Does anyone with more X-savvy know how to set a mask on QX11Info::appRootWindow so that
         //  the irrelevant bits are always ignored and we can just make one XGrabKey
         //  call per accelerator? -- ellis
-    #ifndef NDEBUG
+#ifndef NDEBUG
         QString sDebug = QString("code: 0x%1 state: 0x%2 | ").arg(keyCodeX,0,16).arg(keyModX,0,16);
-    #endif
+#endif
         uint keyModMaskX = ~g_keyModMaskXOnOrOff;
         QVector<xcb_void_cookie_t> cookies;
         for( uint irrelevantBitsMask = 0; irrelevantBitsMask <= 0xff; irrelevantBitsMask++ ) {
             if( (irrelevantBitsMask & keyModMaskX) == 0 ) {
-    #ifndef NDEBUG
+#ifndef NDEBUG
                 sDebug += QString("0x%3, ").arg(irrelevantBitsMask, 0, 16);
-    #endif
+#endif
                 if( grab )
                     cookies << xcb_grab_key_checked(QX11Info::connection(), true,
                                                     QX11Info::appRootWindow(), keyModX | irrelevantBitsMask,
@@ -187,15 +192,17 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
                                                     QX11Info::appRootWindow(), keyModX | irrelevantBitsMask);
             }
         }
-
+#ifndef NDEBUG
+        qCDebug(KGLOBALACCELD) << sDebug;
+#endif
         bool failed = false;
         if( grab ) {
-                for (int i = 0; i < cookies.size(); ++i) {
-                    QScopedPointer<xcb_generic_error_t, QScopedPointerPodDeleter> error(xcb_request_check(QX11Info::connection(), cookies.at(i)));
-                    if (!error.isNull()) {
-                        failed = true;
-                    }
+            for (int i = 0; i < cookies.size(); ++i) {
+                QScopedPointer<xcb_generic_error_t, QScopedPointerPodDeleter> error(xcb_request_check(QX11Info::connection(), cookies.at(i)));
+                if (!error.isNull()) {
+                    failed = true;
                 }
+            }
             if( failed ) {
                 qCDebug(KGLOBALACCELD) << "grab failed!\n";
                 for( uint m = 0; m <= 0xff; m++ ) {
@@ -208,7 +215,7 @@ bool KGlobalAccelImpl::grabKey( int keyQt, bool grab )
         }
     }
     free(keyCodes);
-	return success;
+    return success;
 }
 
 bool KGlobalAccelImpl::nativeEventFilter(const QByteArray &eventType, void *message, long *)
@@ -281,12 +288,12 @@ void KGlobalAccelImpl::x11MappingNotify()
 
 bool KGlobalAccelImpl::x11KeyPress(xcb_key_press_event_t *pEvent)
 {
-	if (QWidget::keyboardGrabber() || QApplication::activePopupWidget()) {
-		qCWarning(KGLOBALACCELD) << "kglobalacceld should be popup and keyboard grabbing free!";
-	}
+    if (QWidget::keyboardGrabber() || QApplication::activePopupWidget()) {
+        qCWarning(KGLOBALACCELD) << "kglobalacceld should be popup and keyboard grabbing free!";
+    }
 
-	// Keyboard needs to be ungrabed after XGrabKey() activates the grab,
-	// otherwise it becomes frozen.
+    // Keyboard needs to be ungrabed after XGrabKey() activates the grab,
+    // otherwise it becomes frozen.
     xcb_connection_t *c = QX11Info::connection();
     xcb_void_cookie_t cookie = xcb_ungrab_keyboard_checked(c, XCB_TIME_CURRENT_TIME);
     xcb_flush(c);
@@ -302,11 +309,11 @@ bool KGlobalAccelImpl::x11KeyPress(xcb_key_press_event_t *pEvent)
     }
     //qDebug() << "keyQt=" << QString::number(keyQt, 16);
 
-	// All that work for this hey... argh...
+    // All that work for this hey... argh...
     if (NET::timestampCompare(pEvent->time, QX11Info::appTime()) > 0) {
         QX11Info::setAppTime(pEvent->time);
     }
-	return keyPressed(keyQt);
+    return keyPressed(keyQt);
 }
 
 bool KGlobalAccelImpl::x11KeyKeyPressEventToQt(xcb_key_press_event_t *e, int *keyQt) {
